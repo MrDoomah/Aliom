@@ -1,0 +1,11 @@
+{
+ "name": "aliom", 
+ "version": "0.1.0", 
+ "factorio_version": "0.13",
+ "title": "A limited infinite ore mod", 
+ "author": "Mr Doomah", 
+ "contact": "", 
+ "homepage": "", 
+ "description": "Adds infinite ore patches to some but not all ore fields.", 
+ "dependencies": ["base"]
+}
