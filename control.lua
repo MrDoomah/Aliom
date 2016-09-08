@@ -18,10 +18,12 @@ function init()
 	global.resource_amount = global.resource_amount or {} -- The first count of infinite resources should reflect the map_gen_settings
 	global.resource_richness = global.resource_richness or {}
 	global.resource_richness.default = {["none"] = 0, ["very-low"] = 1.5, ["low"] = 3, ["normal"] = 5, ["high"] = 7, ["very-high"] = 9}
+	global.new_resource_name = global.new_resource_name or {}
 	for name, entity in pairs(game.entity_prototypes) do
 		if entity.type == "resource" and not entity.infinite_resource and game.entity_prototypes[entity.name .. "-infinite"] then
 			global.resources[entity.name] = global.resources[entity.name] or {}
 			global.resource_amount[entity.name] = global.resource_amount[entity.name] or {}
+			global.new_resource_name[entity.name] = global.new_resource_name[entity.name] or entity.name .. "-infinite"
 		end
 	end
 	global.inf_resource_chance = global.inf_resource_chance or {}
@@ -41,14 +43,15 @@ function init()
 							}
 end
 
-function add_resource(name, richness, chance)
+function add_resource(name, richness, chance, new_name)
 	-- name is resource entity name
 	-- richness is table, see global.resource_richness.default ^^
 	-- chance is the chance that an ore patch is infinite between 0 - 1 (0 = 0%, 1 = 100%)
 	-- Leave richness and chance nil for default values
-    
+    -- leave new_name empty for default naming (<name>-infinite
+	
 	-- logging new ore, for debugging
-	local s = "aliom:\n  Adding resource: " .. tostring(name) .. "\n  Chance: " .. tostring(chance) .. "\n  Richness: "
+	local s = "aliom:\n  Adding resource: " .. tostring(name) .. "\n  Chance: " .. tostring(chance) .. "\n  New name: " .. tostring(new_name) .. "\n  Richness: "
 	if type(richness) == "table" then
 		for k,v in pairs(richness) do
 			s = s .."\n    " .. tostring(k) .. ": " .. tostring(v)
@@ -62,13 +65,15 @@ function add_resource(name, richness, chance)
 	if not global.resources then init() end
 	if not chance then chance = global.inf_resource_chance.default end
 	if not richness or type(richness) ~= "table" then richness = global.resource_richness.default end
+	if not new_name then new_name = name .. "-infinte" end
 	
 	
-	if game.entity_prototypes[name].type == "resource" and not game.entity_prototypes[name].infinite_resource and game.entity_prototypes[name .. "-infinite"] then
+	if game.entity_prototypes[name].type == "resource" and game.entity_prototypes[new_name] then
 		global.resource_richness[name] = util.table.deepcopy(richness)
 		global.inf_resource_chance[name] = chance
 		global.resources[name] = global.resources[name] or {}
 		global.resource_amount[name] = global.resource_amount[name] or {}
+		global.new_resource_name[name] = new_name
 		for _, surface in pairs(game.surfaces) do
 			local richness = "normal"
 			if surface.map_gen_settings.autoplace_controls[name] then
@@ -76,9 +81,10 @@ function add_resource(name, richness, chance)
 			elseif resource.prototype.autoplace_specification then
 				local richness = game.surfaces["nauvis"].map_gen_settings.autoplace_controls[name].richness
 			end
-			global.resource_amount[name][surface.name] = global.resource_richness[name][richness] * game.entity_prototypes[name .. "-infinite"].minimum_resource_amount
+			global.resource_amount[name][surface.name] = global.resource_richness[name][richness] * game.entity_prototypes[new_name].minimum_resource_amount
 		end
 	end	
+	return {name = name, richness = global.resource_richness[name], chance = global.inf_resource_chance[name], amount = global.resource_amount[name], new_name = global.new_resource_name[name], resources = global.resources[name]}
 end
 
 script.on_init(init)
@@ -88,7 +94,7 @@ script.on_configuration_changed(init)
 -- for other mods to add custom values for inf chance and richness do:
 -- for name,version in pairs(game.active_mods) do
 	-- if name == "aliom" and remote.interfaces.aliom.add_resource then 
-		-- remote.call("aliom","add_resource",<ore name>, <richness table>, <infinite chance>})
+		-- remote.call("aliom","add_resource",<ore name>, <richness table>, <infinite chance>, <new ore name>)
 		-- break
 	-- end
 -- end
@@ -156,50 +162,53 @@ function find_field(resource)
 	end
 	field.position.x = field.position.x / #field.ores
 	field.position.y = field.position.y / #field.ores
+	
 	return field	
 end
 
 script.on_event(defines.events.on_resource_depleted, function(event)
 	local resource = event.entity
+	local name = resource.name
 	local surface = resource.surface
 	local position = resource.position
 	local new_field = false
-	if global.resources[resource.name] then
-		if global.resources[resource.name][surface.name] then
-			if global.resources[resource.name][surface.name][position.x] then
-				if not global.resources[resource.name][surface.name][position.x][position.y] then
+	if global.resources[name] then
+		if global.resources[name][surface.name] then
+			if global.resources[name][surface.name][position.x] then
+				if not global.resources[name][surface.name][position.x][position.y] then
 					new_field = true
 				end
 			else
-				global.resources[resource.name][surface.name][position.x] = {}
+				global.resources[name][surface.name][position.x] = {}
 				new_field = true
 			end
 		else
-			global.resources[resource.name][surface.name] = {}
-			global.resources[resource.name][surface.name][position.x] = {}
+			global.resources[name][surface.name] = {}
+			global.resources[name][surface.name][position.x] = {}
 			new_field = true
 			global.start_area[surface.name] = global.start_area_size[surface.map_gen_settings.starting_area]
 			
 			local richness = "normal"
-			if surface.map_gen_settings.autoplace_controls[resource.name] then
-				local richness = surface.map_gen_settings.autoplace_controls[resource.name].richness
+			if surface.map_gen_settings.autoplace_controls[name] then
+				local richness = surface.map_gen_settings.autoplace_controls[name].richness
 			elseif resource.prototype.autoplace_specification then
-				local richness = game.surfaces["nauvis"].map_gen_settings.autoplace_controls[resource.name].richness
+				local richness = game.surfaces["nauvis"].map_gen_settings.autoplace_controls[name].richness
 			end
-			if global.resource_richness[resource.name] then
-				global.resource_amount[resource.name][surface.name] = global.resource_richness[resource.name][richness] * game.entity_prototypes[resource.name .. "-infinite"].minimum_resource_amount
+			if global.resource_richness[name] then
+				global.resource_amount[name][surface.name] = global.resource_richness[name][richness] * game.entity_prototypes[global.new_resource_name[name]].minimum_resource_amount
 			else
-				global.resource_amount[resource.name][surface.name] = global.resource_richness.default[richness] * game.entity_prototypes[resource.name .. "-infinite"].minimum_resource_amount
+				global.resource_amount[name][surface.name] = global.resource_richness.default[richness] * game.entity_prototypes[global.new_resource_name[name]].minimum_resource_amount
 			end
 		end
 		
 		if new_field then
 			local field = find_field(resource)
-			local chance = global.inf_resource_chance[resource.name] or global.inf_resource_chance.default
+			local chance = global.inf_resource_chance[name] or global.inf_resource_chance.default
 			if math.random() < chance and util.distance(field.position,{x = 0, y = 0}) > global.start_area[surface.name] then
 				for _,ore in pairs(field.ores) do
 					local dist = util.distance(ore.position,field.position)
 					local ore_value = math.exp(-dist/20) * math.random(global.resource_amount[ore.name][ore.surface.name]*2/3,global.resource_amount[ore.name][ore.surface.name]*3/2)
+					ore_value = math.max(ore_value, game.entity_prototypes[global.new_resource_name[name]].minimum_resource_amount)
 					global.resources[ore.name][ore.surface.name] = global.resources[ore.name][ore.surface.name] or {}
 					global.resources[ore.name][ore.surface.name][ore.position.x] = global.resources[ore.name][ore.surface.name][ore.position.x] or {}
 					global.resources[ore.name][ore.surface.name][ore.position.x][ore.position.y] = ore_value
@@ -213,12 +222,13 @@ script.on_event(defines.events.on_resource_depleted, function(event)
 			
 			end
 		end
-		if global.resources[resource.name][surface.name][position.x][position.y] > 0 then
-			surface.create_entity{	name=resource.name .. "-infinite", 
+		if global.resources[name][surface.name][position.x][position.y] > 0 then
+			surface.create_entity{	name=global.new_resource_name[name], 
 									position=position, 
 									force=resource.force, 
-									amount = math.ceil(global.resources[resource.name][surface.name][position.x][position.y])} -- amount must be an integer, otherwise defaults to 50
+									amount = math.ceil(global.resources[name][surface.name][position.x][position.y])} -- amount must be an integer, otherwise defaults to 50
+			if resource.prototype.infinite_resource then resource.destroy() end -- Depleted infinite resources need to be destroyed to prevent two resources taking up the same spot.
 		end
-		global.resources[resource.name][surface.name][position.x][position.y] = nil -- to keep the table small
+		global.resources[name][surface.name][position.x][position.y] = nil -- to keep the table small
 	end
 end)
